@@ -6,6 +6,7 @@ target_link_libraries(claford PRIVATE
     fmt::fmt
     glog::glog
     libfswatch::libfswatch
+    nowide::nowide
 )
 
 install(TARGETS claford
