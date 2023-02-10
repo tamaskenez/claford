@@ -155,8 +155,13 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    if (nowide::system("clang-format --version") != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
     if (os.paths.empty()) {
         nowide::cerr << "No path specified.\n";
+        return EXIT_FAILURE;
     }
 
     int n_invalid_paths = 0;
