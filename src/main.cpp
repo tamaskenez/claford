@@ -134,6 +134,7 @@ void FormattingLoop(Context& ctx) {
             }
         }
         // Format.
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         int result = system(fmt::format("clang-format -i {}", path).c_str());
         if (result == EXIT_SUCCESS) {
             paths_formatted_at[path] = fs::last_write_time(path);
