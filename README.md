@@ -15,6 +15,6 @@ Run these scripts:
 ./i/bin/claford <dir-to-watch>
 ```
 
-The program starts watching the specified directory and apply `clang-format -i -style=file ...` if a file gets modified.
+The program starts watching the specified directory and applies `clang-format -i -style=file ...` if a file gets modified.
 
 When you save a file in your text editor, which then gets formatted immediately by claford, the text editor might fail to detect that the file has been changed. With Xcode it happens all the time. That's why there's a 1 second delay before each clang-format call.
