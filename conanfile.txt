@@ -1,3 +1,8 @@
 [requires]
 fmt/9.1.0
 glog/0.6.0
+glfw/3.3.8
+imgui/1.89.2
+
+[generators]
+CMakeDeps

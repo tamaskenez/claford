@@ -20,5 +20,5 @@ done
 cmake -S deps/readerwriterqueue/s -B deps/readerwriterqueue/b -DCMAKE_INSTALL_PREFIX=$PWD/i
 cmake --build deps/readerwriterqueue/b --target install
 
-conan install -b missing -g cmake_find_package_multi -if $PWD/i/cmake -s build_type=Debug .
-conan install -b missing -g cmake_find_package_multi -if $PWD/i/cmake -s build_type=Release .
+conan install . -b missing -if i/cmake -of of -s build_type=Debug
+conan install . -b missing -if i/cmake -of of -s build_type=Release
