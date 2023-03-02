@@ -4,12 +4,13 @@ project(claford)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_REQUIRED 1)
 
+find_package(concurrentqueue REQUIRED)
 find_package(fmt REQUIRED)
+find_package(glfw3 REQUIRED)
 find_package(glog REQUIRED)
+find_package(imgui REQUIRED)
 find_package(libfswatch REQUIRED)
 find_package(nowide REQUIRED)
-find_package(glfw3 REQUIRED)
-find_package(imgui REQUIRED)
 
 set(WARNINGS_AS_ERRORS ON CACHE BOOL "Warnings as errors" FORCE)
 include(cmake/cpp_warnings.cmake)
@@ -32,8 +33,3 @@ target_include_directories(imgui_glfw_binding PUBLIC
 add_subdirectory(src)
 
 
-add_executable(glfw_main glfw_main.cpp)
-target_link_libraries(glfw_main PRIVATE
-    glfw
-    imgui_glfw_binding
-)
