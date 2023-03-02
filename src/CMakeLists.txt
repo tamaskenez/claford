@@ -3,6 +3,7 @@ add_executable(claford ${sources})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${sources})
 
 target_link_libraries(claford PRIVATE
+    concurrentqueue::concurrentqueue
     fmt::fmt
     glfw
     glog::glog

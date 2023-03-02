@@ -1,3 +1,7 @@
+#include "state.h"
+#include "ui_glfw_imgui.h"
+#include "util.h"
+
 #include <fmt/format.h>
 #include <glog/logging.h>
 #include <readerwriterqueue/readerwriterqueue.h>
@@ -10,12 +14,11 @@
 #include <csignal>
 #include <filesystem>
 #include <functional>
+#include <list>
 #include <set>
 #include <string_view>
 #include <thread>
 #include <unordered_map>
-
-#define BE(X) (X).begin(), (X).end()
 
 std::atomic<bool> g_sigint_received;
 
@@ -25,20 +28,7 @@ void signal_handler(int /* signum */) {
 
 namespace fs = std::filesystem;
 
-constexpr int k_formatting_loop_sleep_millisec = 10;
-constexpr double k_monitor_latency_sec = 0.01;
-
-struct Context {
-    struct Options {
-        std::vector<std::string> paths;
-        std::vector<fs::path> extensions = {
-            ".cpp", ".cxx", ".c", ".m", ".mm", ".h", ".hpp", ".hxx"};
-        bool need_extension(const fs::path& e) const {
-            return std::find(BE(extensions), e) != extensions.end();
-        }
-    } options;
-    moodycamel::ReaderWriterQueue<std::string> f2m_queue;  // Formatter to monitor queue.
-};
+constexpr double k_monitor_latency_sec = 0.02;
 
 void DisplayHelp() {
     fmt::print("claford - clang-format daemon\n");
@@ -58,7 +48,7 @@ std::string_view reinterpret_char(std::u8string_view sv) {
 }
 
 void fsw_event_callback(const std::vector<fsw::event>& es, void* void_ctx) {
-    auto* ctx = static_cast<Context*>(void_ctx);
+    auto* ctx = static_cast<State*>(void_ctx);
     std::vector<std::string> paths;
     for (auto& e : es) {
         auto path = e.get_path();
@@ -99,49 +89,54 @@ void fsw_event_callback(const std::vector<fsw::event>& es, void* void_ctx) {
     std::sort(BE(paths));
     paths.erase(std::unique(BE(paths)), paths.end());
     for (auto& p : paths) {
-        CHECK(ctx->f2m_queue.enqueue(std::move(p)));
+        CHECK(ctx->to_app_queue.enqueue(msg::FileChanged{std::move(p)}));
     }
 }
 
-void FormattingLoop(Context& ctx) {
-    std::string path;
-    std::unordered_map<std::string, fs::file_time_type> paths_formatted_at;
+void ProcessMsgs(State& ctx) {
+    std::any msg;
     for (;;) {
-        if (!ctx.f2m_queue.try_dequeue(path)) {
-            if (g_sigint_received) {
-                return;
-            }
-            std::this_thread::sleep_for(
-                std::chrono::milliseconds(k_formatting_loop_sleep_millisec));
-            continue;
+        if (g_sigint_received) {
+            exit(EXIT_SUCCESS);
         }
-        // Filter by extension.
-        auto fs_path = fs::path(reinterpret_u8(path));
-        if (!ctx.options.need_extension(fs_path.extension())) {
-            continue;
+        if (!ctx.to_app_queue.try_dequeue(msg)) {
+            return;
         }
-        // Ignore non-existing.
-        if (!fs::exists(reinterpret_u8(path))) {
-            paths_formatted_at.erase(path);
-            continue;
-        }
-        // Ignore files not changed since formatting.
-        auto it = paths_formatted_at.find(path);
-        if (it != paths_formatted_at.end()) {
-            auto last_write_time = fs::last_write_time(path);
-            if (last_write_time == it->second) {
+        if (auto* c = std::any_cast<msg::FileChanged>(&msg)) {
+            // Filter by extension.
+            auto fs_path = fs::path(reinterpret_u8(c->path));
+            if (!ctx.options.extensions.contains(fs_path.extension())) {
                 continue;
             }
-        }
-        // Format.
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        int result = system(fmt::format("clang-format -i {}", path).c_str());
-        if (result == EXIT_SUCCESS) {
-            paths_formatted_at[path] = fs::last_write_time(path);
-            nowide::cout << "Formatted " << path << "\n";
+            // Ignore non-existing.
+            if (!fs::exists(reinterpret_u8(c->path))) {
+                ctx.paths_formatted_at.erase(c->path);
+                ctx.paths_to_format_since.erase(c->path);
+                continue;
+            }
+            // Ignore files not changed since formatting.
+            auto last_write_time = fs::last_write_time(c->path);
+            auto it = ctx.paths_formatted_at.find(c->path);
+            if (it != ctx.paths_formatted_at.end()) {
+                if (last_write_time == it->second) {
+                    continue;
+                }
+            }
+            ctx.paths_formatted_at.erase(c->path);
+            ctx.paths_to_format_since[c->path] = last_write_time;
+        } else if (auto* _ = std::any_cast<msg::FormatAll>(&msg)) {
+            for (auto& [path, t] : ctx.paths_to_format_since) {
+                int result = system(fmt::format("clang-format -i {}", path).c_str());
+                if (result == EXIT_SUCCESS) {
+                    ctx.paths_formatted_at[path] = fs::last_write_time(c->path);
+                    nowide::cout << "Formatted " << c->path << "\n";
+                } else {
+                    nowide::cout << "ERROR formatting " << c->path << "\n";
+                }
+            }
         } else {
-            paths_formatted_at.erase(path);
-            nowide::cout << "ERROR formatting " << path << "\n";
+            fprintf(stderr, "Invalid message\n");
+            assert(false);
         }
     }
 }
@@ -152,7 +147,7 @@ int main_core(int argc, char* argv[]) {
     FLAGS_logtostderr = 1;
     google::InitGoogleLogging(argv[0]);
 
-    Context ctx;
+    State ctx;
     auto& os = ctx.options;
 
     for (int i = 1; i < argc; ++i) {
@@ -193,6 +188,11 @@ int main_core(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
+    auto ui = make_ui_glfw_imgui(ctx);
+    if (!ui) {
+        return EXIT_FAILURE;
+    }
+
     auto* monitor = fsw::monitor_factory::create_monitor(
         fsw_monitor_type::system_default_monitor_type, os.paths, fsw_event_callback, &ctx);
 
@@ -211,7 +211,9 @@ int main_core(int argc, char* argv[]) {
     });
 
     fmt::print("claford is running, CTRL-C to exit...\n");
-    FormattingLoop(ctx);
+    ui->exec([&ctx]() {
+        ProcessMsgs(ctx);
+    });
     monitor->stop();
 
     if (monitor_thread.joinable()) {
