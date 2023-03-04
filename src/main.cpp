@@ -125,13 +125,17 @@ void ProcessMsgs(State& ctx) {
             ctx.paths_formatted_at.erase(c->path);
             ctx.paths_to_format_since[c->path] = last_write_time;
         } else if (auto* _ = std::any_cast<msg::FormatAll>(&msg)) {
-            for (auto& [path, t] : ctx.paths_to_format_since) {
-                int result = system(fmt::format("clang-format -i {}", path).c_str());
+            std::vector<std::string> formatted_paths;
+            for (auto it = ctx.paths_to_format_since.begin(); it != ctx.paths_to_format_since.end();
+                 /* no inc */) {
+                int result = system(fmt::format("clang-format -i {}", it->first).c_str());
                 if (result == EXIT_SUCCESS) {
-                    ctx.paths_formatted_at[path] = fs::last_write_time(c->path);
-                    nowide::cout << "Formatted " << c->path << "\n";
+                    ctx.paths_formatted_at[it->first] = fs::last_write_time(it->first);
+                    nowide::cout << "Formatted " << it->first << "\n";
+                    it = ctx.paths_to_format_since.erase(it);
                 } else {
-                    nowide::cout << "ERROR formatting " << c->path << "\n";
+                    nowide::cout << "ERROR formatting " << it->first << "\n";
+                    ++it;
                 }
             }
         } else {
@@ -169,6 +173,7 @@ int main_core(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
+    system("echo $PATH");
     if (nowide::system("clang-format --version") != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
@@ -188,7 +193,7 @@ int main_core(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    auto ui = make_ui_glfw_imgui(ctx);
+    auto ui = make_ui_glfw_imgui(ctx, ctx.to_app_queue);
     if (!ui) {
         return EXIT_FAILURE;
     }

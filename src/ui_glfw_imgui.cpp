@@ -4,21 +4,33 @@
 #include "util.h"
 
 #include <GLFW/glfw3.h>  // Will drag system OpenGL headers
+#include <fmt/format.h>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
-static void glfw_error_callback(int error, const char* description) {
+namespace fs = std::filesystem;
+namespace chr = std::chrono;
+
+namespace {
+void glfw_error_callback(int error, const char* description) {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
     exit(EXIT_FAILURE);
 }
+}  // namespace
 
 struct UI_GLFW_ImGui : public UI {
     GLFWwindow* window;
     const State& ctx;
-    UI_GLFW_ImGui(GLFWwindow* window, const State& ctx)
+    ToAppQueue& to_app_queue;
+    bool format_on_focus = false;
+    std::optional<ImVec2> format_all_button_size;
+    int window_has_focus = 1;
+    bool dark_mode = false;
+    UI_GLFW_ImGui(GLFWwindow* window, const State& ctx, ToAppQueue& to_app_queue)
         : window(window)
-        , ctx(ctx) {}
+        , ctx(ctx)
+        , to_app_queue(to_app_queue) {}
     ~UI_GLFW_ImGui() {
         // Cleanup
         ImGui_ImplOpenGL3_Shutdown();
@@ -29,9 +41,14 @@ struct UI_GLFW_ImGui : public UI {
         glfwTerminate();
     }
 
+    void ApplyDarkMode() {
+        dark_mode ? ImGui::StyleColorsDark() : ImGui::StyleColorsLight();
+    }
+
     void exec(std::function<void()> process_msgs_fn) override {
         bool show_demo_window = false;
         ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+        ApplyDarkMode();
         while (!glfwWindowShouldClose(window)) {
             // Poll and handle events (inputs, window resize, etc.)
             // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear
@@ -44,6 +61,14 @@ struct UI_GLFW_ImGui : public UI {
             // on those two flags.
             glfwPollEvents();
 
+            {
+                int focused = glfwGetWindowAttrib(window, GLFW_FOCUSED);
+                if (focused && !window_has_focus && format_on_focus) {
+                    to_app_queue.enqueue(msg::FormatAll{});
+                }
+                window_has_focus = focused;
+            }
+
             // Start the Dear ImGui frame
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
@@ -51,20 +76,33 @@ struct UI_GLFW_ImGui : public UI {
 
             // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()!
             // You can browse its code to learn more about Dear ImGui!).
-            if (show_demo_window)
+            if (show_demo_window) {
                 ImGui::ShowDemoWindow(&show_demo_window);
-
-            // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a
-            // named window.
+            }
+            bool new_dark_mode;
             {
                 auto* mvp = ImGui::GetMainViewport();
                 ImGui::SetNextWindowPos(mvp->WorkPos);
                 ImGui::SetNextWindowSize(mvp->WorkSize);
 
-                ImGui::Begin(
-                    "Hello, world!");  // Create a window called "Hello, world!" and append into it.
+                ImGui::Begin("A", nullptr, ImGuiWindowFlags_NoTitleBar);
 
-                namespace fs = std::filesystem;
+                const char* kFormatAllButtonLabel = "Format All";
+                if (format_all_button_size && ctx.paths_to_format_since.empty()) {
+                    ImGui::InvisibleButton(kFormatAllButtonLabel, *format_all_button_size);
+                } else {
+                    if (ImGui::Button(kFormatAllButtonLabel)) {
+                        to_app_queue.enqueue(msg::FormatAll{});
+                    }
+                    format_all_button_size = ImGui::GetItemRectSize();
+                }
+                ImGui::SameLine();
+                ImGui::Checkbox("Format On Focus", &format_on_focus);
+                ImGui::SameLine();
+                ImGui::Checkbox("Demo", &show_demo_window);
+                ImGui::SameLine();
+                ImGui::Checkbox("Dark", &new_dark_mode);
+
                 using TimeAndPath = std::pair<fs::file_time_type, std::string>;
                 std::vector<TimeAndPath> paths;
                 for (auto& [path, t] : ctx.paths_to_format_since) {
@@ -72,9 +110,26 @@ struct UI_GLFW_ImGui : public UI {
                 }
                 std::sort(BE(paths));
                 std::reverse(BE(paths));
-                
-                for(auto&[_,p]:paths){
-                  ImGui::Text("%s", p.c_str());
+
+                auto now = fs::file_time_type::clock::now();
+                for (auto& [t, p] : paths) {
+                    auto age = now - t;
+                    std::string s;
+                    if (age < chr::seconds(1)) {
+                        s = fmt::format("{} ms",
+                                        chr::duration_cast<chr::milliseconds>(age).count());
+                    } else if (age < chr::minutes(1)) {
+                        s = fmt::format("{} s", chr::duration_cast<chr::seconds>(age).count());
+                    } else if (age < chr::hours(1)) {
+                        s = fmt::format("{} s", chr::duration_cast<chr::minutes>(age).count());
+                    } else if (age < chr::hours(24)) {
+                        s = fmt::format("{} s", chr::duration_cast<chr::hours>(age).count());
+                    } else {
+                        s = fmt::format("{} s", chr::duration_cast<chr::days>(age).count());
+                    }
+                    ImGui::Text("%s", p.c_str());
+                    ImGui::SameLine();
+                    ImGui::Text("%s", s.c_str());
                 }
                 ImGui::End();
             }
@@ -93,11 +148,17 @@ struct UI_GLFW_ImGui : public UI {
 
             process_msgs_fn();
             glfwSwapBuffers(window);
+            std::this_thread::sleep_for(chr::milliseconds(window_has_focus ? 1 / 60 : 1 / 20));
+
+            if (new_dark_mode != dark_mode) {
+                dark_mode = new_dark_mode;
+                ApplyDarkMode();
+            }
         }
     }
 };
 
-std::unique_ptr<UI> make_ui_glfw_imgui(const State& ctx) {
+std::unique_ptr<UI> make_ui_glfw_imgui(const State& ctx, ToAppQueue& to_app_queue) {
     glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit()) {
         fprintf(stderr, "glfwInit failed.\n");
@@ -124,7 +185,9 @@ std::unique_ptr<UI> make_ui_glfw_imgui(const State& ctx) {
 #endif
 
     // Create window with graphics context
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Dear ImGui GLFW+OpenGL3 example", NULL, NULL);
+    int xpos, ypos, width, height;
+    glfwGetMonitorWorkarea(glfwGetPrimaryMonitor(), &xpos, &ypos, &width, &height);
+    GLFWwindow* window = glfwCreateWindow(height / 2, height / 2, "claford", nullptr, nullptr);
     if (!window) {
         fprintf(stderr, "glfwCreateWindow failed.\n");
         return nullptr;
@@ -137,10 +200,6 @@ std::unique_ptr<UI> make_ui_glfw_imgui(const State& ctx) {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
-
-    // Setup Dear ImGui style
-    // ImGui::StyleColorsDark();
-    ImGui::StyleColorsLight();
 
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(window, true);
@@ -171,5 +230,5 @@ std::unique_ptr<UI> make_ui_glfw_imgui(const State& ctx) {
     // ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, NULL,
     // io.Fonts->GetGlyphRangesJapanese()); IM_ASSERT(font != NULL);
 
-    return std::make_unique<UI_GLFW_ImGui>(window, ctx);
+    return std::make_unique<UI_GLFW_ImGui>(window, ctx, to_app_queue);
 }
