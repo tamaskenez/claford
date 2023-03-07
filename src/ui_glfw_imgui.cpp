@@ -234,8 +234,8 @@ struct UI_GLFW_ImGui : public UI {
 
                     auto age = now - e.time;
 
-                    auto& style = ImGui::GetStyle();
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + style.FramePadding.y);
+                    // auto& style = ImGui::GetStyle();
+                    //  ImGui::SetCursorPosY(ImGui::GetCursorPosY() + style.FramePadding.y);
                     const auto mp = ImGui::GetMousePos();
                     const auto cpy = ImGui::GetCursorPos().y;
                     bool hover = min_cursor_pos_x <= mp.x && mp.x < max_cursor_pos_x && cpy <= mp.y
@@ -243,30 +243,29 @@ struct UI_GLFW_ImGui : public UI {
 
                     ImGui::SetCursorPosX(max_cursor_pos_x - max_ago_text_width - gap - max_ext_width
                                          - stem_width - dir_slash_width);
-                    ImGui::Text("%s", dir_slash_and_stem.first.c_str());
+                    ImGui::Selectable(dir_slash_and_stem.first.c_str());
                     ImGui::SameLine(max_cursor_pos_x - max_ago_text_width - gap - max_ext_width
                                     - stem_width);
 
-                    auto color = e.formatted ? ImVec4(0, 1, 0, 1) : ImVec4(1, 0, 0, 1);
+                    auto color = e.formatted
+                                   ? (dark_mode ? ImVec4(0, 1, 0, 1) : ImVec4(0, 0.7, 0, 1))
+                                   : (dark_mode ? ImVec4(1, 0, 0, 1) : ImVec4(0.7, 0, 0, 1));
                     ImGui::TextColored(color, "%s", dir_slash_and_stem.second.c_str());
                     ImGui::SameLine(max_cursor_pos_x - max_ago_text_width - gap - max_ext_width);
                     ImGui::Text("%s", e.ext.c_str());
                     ImGui::SameLine(max_cursor_pos_x - max_ago_text_width);
-                    bool formatOne = false;
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - style.FramePadding.y);
-                    /*
-                   if (hover) {
-                       formatOne = ImGui::Button(e.formatted ? "Touch" : "Format");
-                   } else {
-                       // ImGui::Text("%s", AgoText(age).c_str());
-                       formatOne = ImGui::Button(AgoText(age).c_str());
-                   }
-                   */
-                    formatOne = ImGui::Button(
-                        ((hover ? (e.formatted ? "Touch!" : "Format!") : AgoText(age))).c_str());
-
-                    if (formatOne) {
-                        to_app_queue.enqueue(msg::FormatOne{*e.path});
+                    // bool formatOne = false;
+                    //  ImGui::SetCursorPosY(ImGui::GetCursorPosY() - style.FramePadding.y);
+                    ImGui::Text("%s", AgoText(age).c_str());
+                    if (hover) {
+                        ImGui::SetTooltip(e.formatted ? "Touch!" : "Format!");
+                        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                            if (e.formatted) {
+                                to_app_queue.enqueue(msg::TouchOne{*e.path});
+                            } else {
+                                to_app_queue.enqueue(msg::FormatOne{*e.path});
+                            }
+                        }
                     }
                 }
 

@@ -11,6 +11,7 @@ find_package(glog REQUIRED)
 find_package(imgui REQUIRED)
 find_package(libfswatch REQUIRED)
 find_package(nowide REQUIRED)
+find_package(glew CONFIG REQUIRED)
 
 set(WARNINGS_AS_ERRORS ON CACHE BOOL "Warnings as errors" FORCE)
 include(cmake/cpp_warnings.cmake)

@@ -119,8 +119,17 @@ void ProcessMsgs(State& ctx) {
                     continue;
                 }
             }
-            ctx.paths_formatted_at.erase(c->path);
-            ctx.paths_to_format_since[c->path] = *last_write_time;
+            int result =
+                system(fmt::format("clang-format --dry-run -Werror \"{}\"", c->path).c_str());
+            if (result == EXIT_SUCCESS) {
+                // Already formatted.
+                ctx.paths_formatted_at[c->path] = *last_write_time;
+                ctx.paths_to_format_since.erase(c->path);
+            } else {
+                // Needs formatting.
+                ctx.paths_formatted_at.erase(c->path);
+                ctx.paths_to_format_since[c->path] = *last_write_time;
+            }
         } else if (auto* _ = std::any_cast<msg::FormatAll>(&msg)) {
             std::vector<std::string> formatted_paths;
             for (auto it = ctx.paths_to_format_since.begin(); it != ctx.paths_to_format_since.end();
@@ -150,6 +159,19 @@ void ProcessMsgs(State& ctx) {
                 ctx.paths_to_format_since.erase(fo->path);
             } else {
                 nowide::cout << "ERROR formatting " << fo->path << "\n";
+            }
+        } else if (auto* to = std::any_cast<msg::TouchOne>(&msg)) {
+            std::error_code ec;
+            const auto now = fs::file_time_type::clock::now();
+            fs::last_write_time(to->path, now, ec);
+            if (!ec) {
+                // Assume touch is for formatted files.
+                auto it = ctx.paths_formatted_at.find(to->path);
+                if (it != ctx.paths_formatted_at.end()) {
+                    it->second = fs_last_write_time_noexcept(to->path).value_or(now);
+                } else {
+                    assert(false);
+                }
             }
         } else {
             fprintf(stderr, "Invalid message\n");

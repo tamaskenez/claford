@@ -31,4 +31,7 @@ struct FileChanged {
 struct FormatOne {
     std::string path;
 };
+struct TouchOne {
+    std::string path;
+};
 }  // namespace msg
