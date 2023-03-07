@@ -121,11 +121,15 @@ struct UI_GLFW_ImGui : public UI {
             }
             bool new_dark_mode;
             {
+                constexpr bool use_work_area = true;
                 auto* mvp = ImGui::GetMainViewport();
-                ImGui::SetNextWindowPos(mvp->WorkPos);
-                ImGui::SetNextWindowSize(mvp->WorkSize);
+                ImGui::SetNextWindowPos(use_work_area ? mvp->WorkPos : mvp->Pos);
+                ImGui::SetNextWindowSize(use_work_area ? mvp->WorkSize : mvp->Size);
 
-                ImGui::Begin("claford", nullptr, ImGuiWindowFlags_NoTitleBar);
+                ImGui::Begin("claford",
+                             nullptr,
+                             ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove
+                                 | ImGuiWindowFlags_NoSavedSettings);
 
                 const char* kFormatAllButtonLabel = "Format All";
 
@@ -182,7 +186,7 @@ struct UI_GLFW_ImGui : public UI {
                     auto age = now - e.time;
                     auto agoText = AgoText(age);
                     max_ago_text_width =
-                        std::max(max_ago_text_width, ImGui::CalcTextSize(AgoText(age).c_str()).x);
+                        std::max(max_ago_text_width, ImGui::CalcTextSize(agoText.c_str()).x);
                     max_ext_width = std::max(max_ext_width, ImGui::CalcTextSize(e.ext.c_str()).x);
                 }
                 const auto gap = ImGui::GetStyle().ItemInnerSpacing.x;
@@ -252,11 +256,11 @@ struct UI_GLFW_ImGui : public UI {
                                    : (dark_mode ? ImVec4(1, 0, 0, 1) : ImVec4(0.7, 0, 0, 1));
                     ImGui::TextColored(color, "%s", dir_slash_and_stem.second.c_str());
                     ImGui::SameLine(max_cursor_pos_x - max_ago_text_width - gap - max_ext_width);
-                    ImGui::Text("%s", e.ext.c_str());
+                    ImGui::TextUnformatted(e.ext.c_str());
                     ImGui::SameLine(max_cursor_pos_x - max_ago_text_width);
                     // bool formatOne = false;
                     //  ImGui::SetCursorPosY(ImGui::GetCursorPosY() - style.FramePadding.y);
-                    ImGui::Text("%s", AgoText(age).c_str());
+                    ImGui::TextUnformatted(AgoText(age).c_str());
                     if (hover) {
                         ImGui::SetTooltip(e.formatted ? "Touch!" : "Format!");
                         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
@@ -338,6 +342,7 @@ std::unique_ptr<UI> make_ui_glfw_imgui(const State& ctx, ToAppQueue& to_app_queu
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
+    ImGui::GetStyle().FrameRounding = 4;
 
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(window, true);
@@ -348,6 +353,15 @@ std::unique_ptr<UI> make_ui_glfw_imgui(const State& ctx, ToAppQueue& to_app_queu
     // fonts and use ImGui::PushFont()/PopFont() to select them.
     // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the
     // font among multiple.
+    io.Fonts->AddFontFromFileTTF(
+        "/Users/tamas.kenez/.conan/data/imgui/1.89.2/_/_/package/"
+        "3782cb8c3754bcc4f0ca2283b503d86479835458/res/fonts/Karla-Regular.ttf",
+        12);
+    io.Fonts->AddFontFromFileTTF("/Users/tamas.kenez/.conan/data/imgui/1.89.2/_/_/package/"
+                                 "3782cb8c3754bcc4f0ca2283b503d86479835458/res/fonts/DroidSans.ttf",
+                                 12);
+    io.Fonts->Build();
+
     // - If the file cannot be loaded, the function will return NULL. Please handle those errors in
     // your application (e.g. use an assertion, or display an error and quit).
     // - The fonts will be rasterized at a given size (w/ oversampling) and stored into a texture
