@@ -28,4 +28,7 @@ struct FormatAll {};
 struct FileChanged {
     std::string path;
 };
+struct FormatOne {
+    std::string path;
+};
 }  // namespace msg

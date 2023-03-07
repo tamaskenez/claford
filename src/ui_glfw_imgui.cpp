@@ -13,10 +13,50 @@ namespace fs = std::filesystem;
 namespace chr = std::chrono;
 
 namespace {
+const std::string kEllipsis = "...";
 void glfw_error_callback(int error, const char* description) {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
     exit(EXIT_FAILURE);
 }
+enum class PathDisplay {
+    Intact,
+    EllipsisDirSlashStem,
+    EllipsisSlashStemEllipsis,
+    Ellipsis,
+    Nothing
+};
+
+std::string AgoText(fs::file_time_type::duration age) {
+    if (age < chr::seconds(1)) {
+        return fmt::format("{} ms", chr::duration_cast<chr::milliseconds>(age).count());
+    } else if (age < chr::minutes(1)) {
+        return fmt::format("{} sec", chr::duration_cast<chr::seconds>(age).count());
+    } else if (age < chr::hours(1)) {
+        return fmt::format("{} min", chr::duration_cast<chr::minutes>(age).count());
+    } else if (age < chr::hours(24)) {
+        return fmt::format("{} hrs", chr::duration_cast<chr::hours>(age).count());
+    } else {
+        return fmt::format("{} days", chr::duration_cast<chr::days>(age).count());
+    }
+}
+
+std::pair<std::string, std::string> DirSlashAndStem(const std::string& dir,
+                                                    const std::string& stem,
+                                                    PathDisplay path_display) {
+    switch (path_display) {
+        case PathDisplay::Intact:
+            return {dir + "/", stem};
+        case PathDisplay::EllipsisDirSlashStem:
+            return {kEllipsis + dir + '/', stem};
+        case PathDisplay::EllipsisSlashStemEllipsis:
+            return {kEllipsis + '/', stem + kEllipsis};
+        case PathDisplay::Ellipsis:
+            return {{}, kEllipsis};
+        case PathDisplay::Nothing:
+            return {{}, {}};
+    }
+}
+
 }  // namespace
 
 struct UI_GLFW_ImGui : public UI {
@@ -85,10 +125,12 @@ struct UI_GLFW_ImGui : public UI {
                 ImGui::SetNextWindowPos(mvp->WorkPos);
                 ImGui::SetNextWindowSize(mvp->WorkSize);
 
-                ImGui::Begin("A", nullptr, ImGuiWindowFlags_NoTitleBar);
+                ImGui::Begin("claford", nullptr, ImGuiWindowFlags_NoTitleBar);
 
                 const char* kFormatAllButtonLabel = "Format All";
-                if (format_all_button_size && ctx.paths_to_format_since.empty()) {
+
+                if (format_all_button_size
+                    && (format_on_focus || ctx.paths_to_format_since.empty())) {
                     ImGui::InvisibleButton(kFormatAllButtonLabel, *format_all_button_size);
                 } else {
                     if (ImGui::Button(kFormatAllButtonLabel)) {
@@ -99,38 +141,135 @@ struct UI_GLFW_ImGui : public UI {
                 ImGui::SameLine();
                 ImGui::Checkbox("Format On Focus", &format_on_focus);
                 ImGui::SameLine();
-                ImGui::Checkbox("Demo", &show_demo_window);
-                ImGui::SameLine();
                 ImGui::Checkbox("Dark", &new_dark_mode);
+                ImGui::SameLine();
+                ImGui::Checkbox("Demo", &show_demo_window);
 
-                using TimeAndPath = std::pair<fs::file_time_type, std::string>;
-                std::vector<TimeAndPath> paths;
-                for (auto& [path, t] : ctx.paths_to_format_since) {
-                    paths.emplace_back(t, path);
-                }
-                std::sort(BE(paths));
-                std::reverse(BE(paths));
+                ImGui::Separator();
 
-                auto now = fs::file_time_type::clock::now();
-                for (auto& [t, p] : paths) {
-                    auto age = now - t;
-                    std::string s;
-                    if (age < chr::seconds(1)) {
-                        s = fmt::format("{} ms",
-                                        chr::duration_cast<chr::milliseconds>(age).count());
-                    } else if (age < chr::minutes(1)) {
-                        s = fmt::format("{} s", chr::duration_cast<chr::seconds>(age).count());
-                    } else if (age < chr::hours(1)) {
-                        s = fmt::format("{} s", chr::duration_cast<chr::minutes>(age).count());
-                    } else if (age < chr::hours(24)) {
-                        s = fmt::format("{} s", chr::duration_cast<chr::hours>(age).count());
-                    } else {
-                        s = fmt::format("{} s", chr::duration_cast<chr::days>(age).count());
+                struct Entry {
+                    const std::string* path{};
+                    std::string dir, stem, ext;
+                    fs::file_time_type time;
+                    bool formatted;
+
+                    static Entry Make(const std::string& path,
+                                      fs::file_time_type time,
+                                      bool formatted) {
+                        auto fs_path = PathFromUtf8(path);
+                        auto dir = ToUtf8(fs_path.parent_path());
+                        auto stem = ToUtf8(fs_path.stem());
+                        auto ext = ToUtf8(fs_path.extension());
+                        return Entry{&path, dir, stem, ext, time, formatted};
                     }
-                    ImGui::Text("%s", p.c_str());
-                    ImGui::SameLine();
-                    ImGui::Text("%s", s.c_str());
+                };
+                std::vector<Entry> entries;
+                for (auto& [path, t] : ctx.paths_to_format_since) {
+                    entries.push_back(Entry::Make(path, t, false));
                 }
+                for (auto& [path, t] : ctx.paths_formatted_at) {
+                    entries.push_back(Entry::Make(path, t, true));
+                }
+                std::sort(BE(entries), [](const Entry& a, const Entry& b) {
+                    return b.time < a.time;
+                });
+
+                const auto now = fs::file_time_type::clock::now();
+                float max_ago_text_width =
+                    std::max(ImGui::CalcTextSize("Format!").x, ImGui::CalcTextSize("Touch!").x);
+                float max_ext_width = 0;
+                for (auto& e : entries) {
+                    auto age = now - e.time;
+                    auto agoText = AgoText(age);
+                    max_ago_text_width =
+                        std::max(max_ago_text_width, ImGui::CalcTextSize(AgoText(age).c_str()).x);
+                    max_ext_width = std::max(max_ext_width, ImGui::CalcTextSize(e.ext.c_str()).x);
+                }
+                const auto gap = ImGui::GetStyle().ItemInnerSpacing.x;
+                const auto min_cursor_pos_x = ImGui::GetCursorPosX();
+                const auto max_cursor_pos_x = ImGui::GetContentRegionMax().x;
+                const auto content_width = max_cursor_pos_x - min_cursor_pos_x;
+                const auto max_path_width =
+                    content_width - max_ago_text_width - gap - max_ext_width;
+                for (auto& e : entries) {
+                    PathDisplay path_display = PathDisplay::Intact;
+                    auto dir = e.dir;
+                    auto stem = e.stem;
+                    float path_width;
+                    for (;;) {
+                        auto dir_slash_and_stem = DirSlashAndStem(dir, stem, path_display);
+                        path_width =
+                            ImGui::CalcTextSize(
+                                (dir_slash_and_stem.first + dir_slash_and_stem.second).c_str())
+                                .x;
+                        if (path_width <= max_path_width) {
+                            break;
+                        }
+                        switch (path_display) {
+                            case PathDisplay::Intact:
+                            case PathDisplay::EllipsisDirSlashStem:
+                                if (!dir.empty()) {
+                                    dir = dir.substr(1);
+                                }
+                                path_display = dir.empty() ? PathDisplay::EllipsisSlashStemEllipsis
+                                                           : PathDisplay::EllipsisDirSlashStem;
+                                break;
+                            case PathDisplay::EllipsisSlashStemEllipsis:
+                                if (!stem.empty()) {
+                                    stem = stem.substr(1);
+                                }
+                                if (stem.empty()) {
+                                    path_display = PathDisplay::Ellipsis;
+                                }
+                                break;
+                            case PathDisplay::Ellipsis:
+                            case PathDisplay::Nothing:
+                                path_display = PathDisplay::Nothing;
+                                break;
+                        }
+                    }
+                    auto dir_slash_and_stem = DirSlashAndStem(dir, stem, path_display);
+                    auto dir_slash_width = ImGui::CalcTextSize(dir_slash_and_stem.first.c_str()).x;
+                    auto stem_width = ImGui::CalcTextSize(dir_slash_and_stem.second.c_str()).x;
+
+                    auto age = now - e.time;
+
+                    auto& style = ImGui::GetStyle();
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + style.FramePadding.y);
+                    const auto mp = ImGui::GetMousePos();
+                    const auto cpy = ImGui::GetCursorPos().y;
+                    bool hover = min_cursor_pos_x <= mp.x && mp.x < max_cursor_pos_x && cpy <= mp.y
+                              && mp.y < cpy + ImGui::GetTextLineHeightWithSpacing();
+
+                    ImGui::SetCursorPosX(max_cursor_pos_x - max_ago_text_width - gap - max_ext_width
+                                         - stem_width - dir_slash_width);
+                    ImGui::Text("%s", dir_slash_and_stem.first.c_str());
+                    ImGui::SameLine(max_cursor_pos_x - max_ago_text_width - gap - max_ext_width
+                                    - stem_width);
+
+                    auto color = e.formatted ? ImVec4(0, 1, 0, 1) : ImVec4(1, 0, 0, 1);
+                    ImGui::TextColored(color, "%s", dir_slash_and_stem.second.c_str());
+                    ImGui::SameLine(max_cursor_pos_x - max_ago_text_width - gap - max_ext_width);
+                    ImGui::Text("%s", e.ext.c_str());
+                    ImGui::SameLine(max_cursor_pos_x - max_ago_text_width);
+                    bool formatOne = false;
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - style.FramePadding.y);
+                    /*
+                   if (hover) {
+                       formatOne = ImGui::Button(e.formatted ? "Touch" : "Format");
+                   } else {
+                       // ImGui::Text("%s", AgoText(age).c_str());
+                       formatOne = ImGui::Button(AgoText(age).c_str());
+                   }
+                   */
+                    formatOne = ImGui::Button(
+                        ((hover ? (e.formatted ? "Touch!" : "Format!") : AgoText(age))).c_str());
+
+                    if (formatOne) {
+                        to_app_queue.enqueue(msg::FormatOne{*e.path});
+                    }
+                }
+
                 ImGui::End();
             }
 

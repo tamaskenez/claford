@@ -39,14 +39,6 @@ void DisplayHelp() {
     fmt::print("paths... is a list of directories to watch\n");
 }
 
-std::u8string_view reinterpret_u8(const std::string& s) {
-    return std::u8string_view(reinterpret_cast<const char8_t*>(s.c_str()), s.size());
-}
-
-std::string_view reinterpret_char(std::u8string_view sv) {
-    return std::string_view(reinterpret_cast<const char*>(sv.data()), sv.size());
-}
-
 void fsw_event_callback(const std::vector<fsw::event>& es, void* void_ctx) {
     auto* ctx = static_cast<State*>(void_ctx);
     std::vector<std::string> paths;
@@ -104,39 +96,60 @@ void ProcessMsgs(State& ctx) {
         }
         if (auto* c = std::any_cast<msg::FileChanged>(&msg)) {
             // Filter by extension.
-            auto fs_path = fs::path(reinterpret_u8(c->path));
+            auto fs_path = PathFromUtf8(c->path);
             if (!ctx.options.extensions.contains(fs_path.extension())) {
                 continue;
             }
             // Ignore non-existing.
-            if (!fs::exists(reinterpret_u8(c->path))) {
+            if (!fs_exists_noexcept(PathFromUtf8(c->path))) {
                 ctx.paths_formatted_at.erase(c->path);
                 ctx.paths_to_format_since.erase(c->path);
                 continue;
             }
             // Ignore files not changed since formatting.
-            auto last_write_time = fs::last_write_time(c->path);
+            auto last_write_time = fs_last_write_time_noexcept(c->path);
+            if (!last_write_time) {
+                ctx.paths_formatted_at.erase(c->path);
+                ctx.paths_to_format_since.erase(c->path);
+                continue;
+            }
             auto it = ctx.paths_formatted_at.find(c->path);
             if (it != ctx.paths_formatted_at.end()) {
-                if (last_write_time == it->second) {
+                if (*last_write_time == it->second) {
                     continue;
                 }
             }
             ctx.paths_formatted_at.erase(c->path);
-            ctx.paths_to_format_since[c->path] = last_write_time;
+            ctx.paths_to_format_since[c->path] = *last_write_time;
         } else if (auto* _ = std::any_cast<msg::FormatAll>(&msg)) {
             std::vector<std::string> formatted_paths;
             for (auto it = ctx.paths_to_format_since.begin(); it != ctx.paths_to_format_since.end();
                  /* no inc */) {
-                int result = system(fmt::format("clang-format -i {}", it->first).c_str());
+                int result = system(fmt::format("clang-format -i \"{}\"", it->first).c_str());
                 if (result == EXIT_SUCCESS) {
-                    ctx.paths_formatted_at[it->first] = fs::last_write_time(it->first);
+                    // Use "now" if failed to query last write time (silently ignoring this rare
+                    // error).
+                    ctx.paths_formatted_at[it->first] =
+                        fs_last_write_time_noexcept(it->first).value_or(
+                            fs::file_time_type::clock::now());
                     nowide::cout << "Formatted " << it->first << "\n";
                     it = ctx.paths_to_format_since.erase(it);
                 } else {
                     nowide::cout << "ERROR formatting " << it->first << "\n";
                     ++it;
                 }
+            }
+        } else if (auto* fo = std::any_cast<msg::FormatOne>(&msg)) {
+            int result = system(fmt::format("clang-format -i \"{}\"", fo->path).c_str());
+            if (result == EXIT_SUCCESS) {
+                // Use "now" if failed to query last write time (silently ignoring this rare
+                // error).
+                ctx.paths_formatted_at[fo->path] = fs_last_write_time_noexcept(fo->path).value_or(
+                    fs::file_time_type::clock::now());
+                nowide::cout << "Formatted " << fo->path << "\n";
+                ctx.paths_to_format_since.erase(fo->path);
+            } else {
+                nowide::cout << "ERROR formatting " << fo->path << "\n";
             }
         } else {
             fprintf(stderr, "Invalid message\n");
@@ -180,11 +193,11 @@ int main_core(int argc, char* argv[]) {
 
     int n_invalid_paths = 0;
     for (auto& p : os.paths) {
-        auto fs_path = fs::path(reinterpret_u8(p));
-        if (!fs::exists(fs_path)) {
+        auto fs_path = PathFromUtf8(p);
+        if (!fs_exists_noexcept(fs_path)) {
             ++n_invalid_paths;
             nowide::cerr << "ERROR: Path " << p << " doesn't exist.\n";
-        } else if (!fs::is_directory(fs_path)) {
+        } else if (!fs_is_directory_noexcept(fs_path)) {
             ++n_invalid_paths;
             nowide::cerr << "ERROR: Path " << p << " is not a directory.\n";
         }
