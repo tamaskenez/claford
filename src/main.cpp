@@ -4,7 +4,6 @@
 
 #include <fmt/format.h>
 #include <glog/logging.h>
-#include <readerwriterqueue/readerwriterqueue.h>
 #include <libfswatch/c++/monitor_factory.hpp>
 #include <nowide/args.hpp>
 #include <nowide/cstdlib.hpp>

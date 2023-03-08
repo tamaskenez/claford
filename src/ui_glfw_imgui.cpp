@@ -353,14 +353,23 @@ std::unique_ptr<UI> make_ui_glfw_imgui(const State& ctx, ToAppQueue& to_app_queu
     // fonts and use ImGui::PushFont()/PopFont() to select them.
     // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the
     // font among multiple.
-    io.Fonts->AddFontFromFileTTF(
-        "/Users/tamas.kenez/.conan/data/imgui/1.89.2/_/_/package/"
-        "3782cb8c3754bcc4f0ca2283b503d86479835458/res/fonts/Karla-Regular.ttf",
-        12);
-    io.Fonts->AddFontFromFileTTF("/Users/tamas.kenez/.conan/data/imgui/1.89.2/_/_/package/"
-                                 "3782cb8c3754bcc4f0ca2283b503d86479835458/res/fonts/DroidSans.ttf",
-                                 12);
-    io.Fonts->Build();
+    ImFont* font{};
+    if (true) {
+        font = io.Fonts->AddFontFromFileTTF(
+            "/Users/tamas.kenez/.conan/data/imgui/1.89.2/_/_/package/"
+            "3782cb8c3754bcc4f0ca2283b503d86479835458/res/fonts/Karla-Regular.ttf",
+            12);
+    } else {
+        font = io.Fonts->AddFontFromFileTTF(
+            "/Users/tamas.kenez/.conan/data/imgui/1.89.2/_/_/package/"
+            "3782cb8c3754bcc4f0ca2283b503d86479835458/res/fonts/DroidSans.ttf",
+            12);
+    }
+    if (font) {
+        io.Fonts->Build();
+    } else {
+        fprintf(stderr, "Couldn't load font.\n");
+    }
 
     // - If the file cannot be loaded, the function will return NULL. Please handle those errors in
     // your application (e.g. use an assertion, or display an error and quit).
