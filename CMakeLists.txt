@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.23)
 project(claford)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -6,19 +6,21 @@ set(CMAKE_CXX_REQUIRED 1)
 
 find_package(concurrentqueue REQUIRED)
 find_package(fmt REQUIRED)
+find_package(freetype CONFIG REQUIRED)
+find_package(glew CONFIG REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(glog REQUIRED)
 find_package(imgui REQUIRED)
 find_package(libfswatch REQUIRED)
 find_package(nowide REQUIRED)
-find_package(glew CONFIG REQUIRED)
-find_package(freetype CONFIG REQUIRED)
+
+list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
 set(WARNINGS_AS_ERRORS ON CACHE BOOL "Warnings as errors" FORCE)
 include(cmake/cpp_warnings.cmake)
 add_compile_options(${PROJECT_WARNING_FLAGS})
 
-set(imgui_source deps/imgui/s)
+set(imgui_source ${PROJECT_SOURCE_DIR}/deps/imgui/s)
 set(imgui_glfw_binding_sources
     ${imgui_source}/backends/imgui_impl_glfw.h
     ${imgui_source}/backends/imgui_impl_glfw.cpp

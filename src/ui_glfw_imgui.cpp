@@ -1,5 +1,7 @@
 #include "ui_glfw_imgui.h"
 
+#include "Inter-Regular.ttf.h"
+#include "Karla-Regular.ttf.h"
 #include "state.h"
 #include "util.h"
 
@@ -354,17 +356,9 @@ std::unique_ptr<UI> make_ui_glfw_imgui(const State& ctx, ToAppQueue& to_app_queu
     // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the
     // font among multiple.
     ImFont* font{};
-    if (true) {
-        font = io.Fonts->AddFontFromFileTTF(
-            "/Users/tamas.kenez/.conan/data/imgui/1.89.2/_/_/package/"
-            "3782cb8c3754bcc4f0ca2283b503d86479835458/res/fonts/Karla-Regular.ttf",
-            12);
-    } else {
-        font = io.Fonts->AddFontFromFileTTF(
-            "/Users/tamas.kenez/.conan/data/imgui/1.89.2/_/_/package/"
-            "3782cb8c3754bcc4f0ca2283b503d86479835458/res/fonts/DroidSans.ttf",
-            12);
-    }
+    auto* p = ImGui::MemAlloc(Inter_Regular_ttf.size());
+    std::copy(Inter_Regular_ttf.begin(), Inter_Regular_ttf.end(), static_cast<char*>(p));
+    font = io.Fonts->AddFontFromMemoryTTF(p, Inter_Regular_ttf.size(), 16);
     if (font) {
         io.Fonts->Build();
     } else {
