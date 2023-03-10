@@ -84,6 +84,43 @@ void fsw_event_callback(const std::vector<fsw::event>& es, void* void_ctx) {
     }
 }
 
+void FileChanged(const std::string& path, State& ctx) {
+    // Filter by extension.
+    auto fs_path = PathFromUtf8(path);
+    if (!ctx.options.extensions.contains(fs_path.extension())) {
+        return;
+    }
+    // Ignore non-existing.
+    if (!fs_exists_noexcept(PathFromUtf8(path))) {
+        ctx.paths_formatted_at.erase(path);
+        ctx.paths_to_format_since.erase(path);
+        return;
+    }
+    // Ignore files not changed since formatting.
+    auto last_write_time = fs_last_write_time_noexcept(path);
+    if (!last_write_time) {
+        ctx.paths_formatted_at.erase(path);
+        ctx.paths_to_format_since.erase(path);
+        return;
+    }
+    auto it = ctx.paths_formatted_at.find(path);
+    if (it != ctx.paths_formatted_at.end()) {
+        if (*last_write_time == it->second) {
+            return;
+        }
+    }
+    int result = system(fmt::format("clang-format --dry-run -Werror \"{}\"", path).c_str());
+    if (result == EXIT_SUCCESS) {
+        // Already formatted.
+        ctx.paths_formatted_at[path] = *last_write_time;
+        ctx.paths_to_format_since.erase(path);
+    } else {
+        // Needs formatting.
+        ctx.paths_formatted_at.erase(path);
+        ctx.paths_to_format_since[path] = *last_write_time;
+    }
+}
+
 void ProcessMsgs(State& ctx) {
     std::any msg;
     for (;;) {
@@ -94,42 +131,29 @@ void ProcessMsgs(State& ctx) {
             return;
         }
         if (auto* c = std::any_cast<msg::FileChanged>(&msg)) {
-            // Filter by extension.
-            auto fs_path = PathFromUtf8(c->path);
-            if (!ctx.options.extensions.contains(fs_path.extension())) {
-                continue;
-            }
-            // Ignore non-existing.
-            if (!fs_exists_noexcept(PathFromUtf8(c->path))) {
-                ctx.paths_formatted_at.erase(c->path);
-                ctx.paths_to_format_since.erase(c->path);
-                continue;
-            }
-            // Ignore files not changed since formatting.
-            auto last_write_time = fs_last_write_time_noexcept(c->path);
-            if (!last_write_time) {
-                ctx.paths_formatted_at.erase(c->path);
-                ctx.paths_to_format_since.erase(c->path);
-                continue;
-            }
-            auto it = ctx.paths_formatted_at.find(c->path);
-            if (it != ctx.paths_formatted_at.end()) {
-                if (*last_write_time == it->second) {
-                    continue;
+            FileChanged(c->path, ctx);
+        } else if (std::any_cast<msg::AddAll>(&msg)) {
+            std::vector<std::string> all_files;
+            for (auto& path : ctx.options.paths) {
+                for (auto const& dir_entry : fs::recursive_directory_iterator(path)) {
+                    std::error_code ec;
+                    auto canonical_path = fs::canonical(dir_entry.path(), ec);
+                    if (ec) {
+                        fprintf(stderr,
+                                "Can't convert %s to canonical path, reason: %s\n",
+                                dir_entry.path().string().c_str(),
+                                ec.message().c_str());
+                        continue;
+                    }
+                    all_files.push_back(canonical_path.c_str());
                 }
             }
-            int result =
-                system(fmt::format("clang-format --dry-run -Werror \"{}\"", c->path).c_str());
-            if (result == EXIT_SUCCESS) {
-                // Already formatted.
-                ctx.paths_formatted_at[c->path] = *last_write_time;
-                ctx.paths_to_format_since.erase(c->path);
-            } else {
-                // Needs formatting.
-                ctx.paths_formatted_at.erase(c->path);
-                ctx.paths_to_format_since[c->path] = *last_write_time;
+            std::sort(all_files.begin(), all_files.end());
+            all_files.erase(std::unique(all_files.begin(), all_files.end()), all_files.end());
+            for (auto& f : all_files) {
+                FileChanged(f, ctx);
             }
-        } else if (auto* _ = std::any_cast<msg::FormatAll>(&msg)) {
+        } else if (std::any_cast<msg::FormatAll>(&msg)) {
             std::vector<std::string> formatted_paths;
             for (auto it = ctx.paths_to_format_since.begin(); it != ctx.paths_to_format_since.end();
                  /* no inc */) {
@@ -198,7 +222,14 @@ int main_core(int argc, char* argv[]) {
                 return EXIT_FAILURE;
             }
         } else {
-            os.paths.push_back(std::string(ai));
+            std::error_code ec;
+            auto abs_path = fs::absolute(ai, ec);
+            if (ec) {
+                fprintf(stderr, "Can't convert path to absolute: %s\n", argv[i]);
+                return EXIT_FAILURE;
+            }
+            fmt::print("{} -> abs -> {}\n", ai, abs_path.string());
+            os.paths.push_back(abs_path.string());
         }
     }
 

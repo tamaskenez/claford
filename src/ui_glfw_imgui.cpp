@@ -121,7 +121,7 @@ struct UI_GLFW_ImGui : public UI {
             if (show_demo_window) {
                 ImGui::ShowDemoWindow(&show_demo_window);
             }
-            bool new_dark_mode;
+            bool new_dark_mode = dark_mode;
             {
                 constexpr bool use_work_area = true;
                 auto* mvp = ImGui::GetMainViewport();
@@ -145,7 +145,15 @@ struct UI_GLFW_ImGui : public UI {
                     format_all_button_size = ImGui::GetItemRectSize();
                 }
                 ImGui::SameLine();
+                bool prev_format_on_focus = format_on_focus;
                 ImGui::Checkbox("Format On Focus", &format_on_focus);
+                if (!prev_format_on_focus && format_on_focus) {
+                    to_app_queue.enqueue(msg::FormatAll{});
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Add All")) {
+                    to_app_queue.enqueue(msg::AddAll{});
+                }
                 ImGui::SameLine();
                 ImGui::Checkbox("Dark", &new_dark_mode);
                 ImGui::SameLine();
@@ -258,7 +266,7 @@ struct UI_GLFW_ImGui : public UI {
                                    : (dark_mode ? ImVec4(1, 0, 0, 1) : ImVec4(0.7, 0, 0, 1));
                     ImGui::TextColored(color, "%s", dir_slash_and_stem.second.c_str());
                     ImGui::SameLine(max_cursor_pos_x - max_ago_text_width - gap - max_ext_width);
-                    ImGui::TextUnformatted(e.ext.c_str());
+                    ImGui::TextColored(color, "%s", e.ext.c_str());
                     ImGui::SameLine(max_cursor_pos_x - max_ago_text_width);
                     // bool formatOne = false;
                     //  ImGui::SetCursorPosY(ImGui::GetCursorPosY() - style.FramePadding.y);

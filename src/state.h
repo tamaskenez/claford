@@ -25,6 +25,7 @@ struct State {
 namespace msg {
 struct Idle {};
 struct FormatAll {};
+struct AddAll {};
 struct FileChanged {
     std::string path;
 };
