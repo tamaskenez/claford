@@ -1,3 +1,8 @@
-- use gitignore
 - always load everything
-- better ellipsis
+- format on separate thread, update UI as it goes
+- windows test: validate utf8, maybe try setting utf codepage and see what does it help (do we get u8 in path::string()?)
+- check refresh rate (fps) lower when possible.
+- better ellipsis symbol (need to load that from the font explicitly)
+- use gitignore
+- use libclangformat
+- check if freetype is better than builtin renderer, try to make freetype better (apply srgb gamma to freetype output?)
