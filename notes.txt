@@ -1,0 +1,3 @@
+- use gitignore
+- always load everything
+- better ellipsis

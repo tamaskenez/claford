@@ -1,6 +1,9 @@
+#include "state.h"
+#include "ui_glfw_imgui.h"
+#include "util.h"
+
 #include <fmt/format.h>
 #include <glog/logging.h>
-#include <readerwriterqueue/readerwriterqueue.h>
 #include <libfswatch/c++/monitor_factory.hpp>
 #include <nowide/args.hpp>
 #include <nowide/cstdlib.hpp>
@@ -10,12 +13,11 @@
 #include <csignal>
 #include <filesystem>
 #include <functional>
+#include <list>
 #include <set>
 #include <string_view>
 #include <thread>
 #include <unordered_map>
-
-#define BE(X) (X).begin(), (X).end()
 
 std::atomic<bool> g_sigint_received;
 
@@ -25,20 +27,7 @@ void signal_handler(int /* signum */) {
 
 namespace fs = std::filesystem;
 
-constexpr int k_formatting_loop_sleep_millisec = 10;
-constexpr double k_monitor_latency_sec = 0.01;
-
-struct Context {
-    struct Options {
-        std::vector<std::string> paths;
-        std::vector<fs::path> extensions = {
-            ".cpp", ".cxx", ".c", ".m", ".mm", ".h", ".hpp", ".hxx"};
-        bool need_extension(const fs::path& e) const {
-            return std::find(BE(extensions), e) != extensions.end();
-        }
-    } options;
-    moodycamel::ReaderWriterQueue<std::string> f2m_queue;  // Formatter to monitor queue.
-};
+constexpr double k_monitor_latency_sec = 0.02;
 
 void DisplayHelp() {
     fmt::print("claford - clang-format daemon\n");
@@ -49,19 +38,11 @@ void DisplayHelp() {
     fmt::print("paths... is a list of directories to watch\n");
 }
 
-std::u8string_view reinterpret_u8(const std::string& s) {
-    return std::u8string_view(reinterpret_cast<const char8_t*>(s.c_str()), s.size());
-}
-
-std::string_view reinterpret_char(std::u8string_view sv) {
-    return std::string_view(reinterpret_cast<const char*>(sv.data()), sv.size());
-}
-
 void fsw_event_callback(const std::vector<fsw::event>& es, void* void_ctx) {
-    auto* ctx = static_cast<Context*>(void_ctx);
-    std::vector<std::string> paths;
+    auto* ctx = static_cast<State*>(void_ctx);
+    std::vector<fs::path> paths;
     for (auto& e : es) {
-        auto path = e.get_path();
+        auto path = PathFromUtf8(e.get_path());
         bool cf = false;
         bool is_file = false;
         for (auto f : e.get_flags()) {
@@ -99,49 +80,127 @@ void fsw_event_callback(const std::vector<fsw::event>& es, void* void_ctx) {
     std::sort(BE(paths));
     paths.erase(std::unique(BE(paths)), paths.end());
     for (auto& p : paths) {
-        CHECK(ctx->f2m_queue.enqueue(std::move(p)));
+        CHECK(ctx->to_app_queue.enqueue(msg::FileChanged{std::move(p)}));
     }
 }
 
-void FormattingLoop(Context& ctx) {
-    std::string path;
-    std::unordered_map<std::string, fs::file_time_type> paths_formatted_at;
+void FileChanged(const fs::path& path, State& ctx) {
+    // Filter by extension.
+    if (!ctx.options.extensions.contains(path.extension())) {
+        return;
+    }
+    // Ignore non-existing.
+    if (!fs_exists_noexcept(path)) {
+        ctx.paths_formatted_at.erase(path);
+        ctx.paths_to_format_since.erase(path);
+        return;
+    }
+    // Ignore files not changed since formatting.
+    auto last_write_time = fs_last_write_time_noexcept(path);
+    if (!last_write_time) {
+        ctx.paths_formatted_at.erase(path);
+        ctx.paths_to_format_since.erase(path);
+        return;
+    }
+    auto it = ctx.paths_formatted_at.find(path);
+    if (it != ctx.paths_formatted_at.end()) {
+        if (*last_write_time == it->second) {
+            return;
+        }
+    }
+    int result =
+        nowide::system(fmt::format("clang-format --dry-run -Werror \"{}\"", ToUtf8(path)).c_str());
+    if (result == EXIT_SUCCESS) {
+        // Already formatted.
+        ctx.paths_formatted_at[path] = *last_write_time;
+        ctx.paths_to_format_since.erase(path);
+    } else {
+        // Needs formatting.
+        ctx.paths_formatted_at.erase(path);
+        ctx.paths_to_format_since[path] = *last_write_time;
+    }
+}
+
+void ProcessMsgs(State& ctx) {
+    std::any msg;
     for (;;) {
-        if (!ctx.f2m_queue.try_dequeue(path)) {
-            if (g_sigint_received) {
-                return;
+        if (g_sigint_received) {
+            exit(EXIT_SUCCESS);
+        }
+        if (!ctx.to_app_queue.try_dequeue(msg)) {
+            return;
+        }
+        if (auto* c = std::any_cast<msg::FileChanged>(&msg)) {
+            FileChanged(c->path, ctx);
+        } else if (std::any_cast<msg::AddAll>(&msg)) {
+            std::vector<fs::path> all_files;
+            for (auto& path : ctx.options.paths) {
+                for (auto const& dir_entry : fs::recursive_directory_iterator(path)) {
+                    std::error_code ec;
+                    auto canonical_path = fs::canonical(dir_entry.path(), ec);
+                    if (ec) {
+                        fprintf(stderr,
+                                "Can't convert %s to canonical path, reason: %s\n",
+                                dir_entry.path().string().c_str(),
+                                ec.message().c_str());
+                        continue;
+                    }
+                    all_files.push_back(canonical_path.c_str());
+                }
             }
-            std::this_thread::sleep_for(
-                std::chrono::milliseconds(k_formatting_loop_sleep_millisec));
-            continue;
-        }
-        // Filter by extension.
-        auto fs_path = fs::path(reinterpret_u8(path));
-        if (!ctx.options.need_extension(fs_path.extension())) {
-            continue;
-        }
-        // Ignore non-existing.
-        if (!fs::exists(reinterpret_u8(path))) {
-            paths_formatted_at.erase(path);
-            continue;
-        }
-        // Ignore files not changed since formatting.
-        auto it = paths_formatted_at.find(path);
-        if (it != paths_formatted_at.end()) {
-            auto last_write_time = fs::last_write_time(path);
-            if (last_write_time == it->second) {
-                continue;
+            std::sort(all_files.begin(), all_files.end());
+            all_files.erase(std::unique(all_files.begin(), all_files.end()), all_files.end());
+            for (auto& f : all_files) {
+                FileChanged(f, ctx);
             }
-        }
-        // Format.
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        int result = system(fmt::format("clang-format -i {}", path).c_str());
-        if (result == EXIT_SUCCESS) {
-            paths_formatted_at[path] = fs::last_write_time(path);
-            nowide::cout << "Formatted " << path << "\n";
+        } else if (std::any_cast<msg::FormatAll>(&msg)) {
+            std::vector<fs::path> formatted_paths;
+            for (auto it = ctx.paths_to_format_since.begin(); it != ctx.paths_to_format_since.end();
+                 /* no inc */) {
+                int result = nowide::system(
+                    fmt::format("clang-format -i \"{}\"", ToUtf8(it->first)).c_str());
+                if (result == EXIT_SUCCESS) {
+                    // Use "now" if failed to query last write time (silently ignoring this rare
+                    // error).
+                    ctx.paths_formatted_at[it->first] =
+                        fs_last_write_time_noexcept(it->first).value_or(
+                            fs::file_time_type::clock::now());
+                    nowide::cout << "Formatted " << it->first << "\n";
+                    it = ctx.paths_to_format_since.erase(it);
+                } else {
+                    nowide::cout << "ERROR formatting " << it->first << "\n";
+                    ++it;
+                }
+            }
+        } else if (auto* fo = std::any_cast<msg::FormatOne>(&msg)) {
+            int result =
+                nowide::system(fmt::format("clang-format -i \"{}\"", ToUtf8(fo->path)).c_str());
+            if (result == EXIT_SUCCESS) {
+                // Use "now" if failed to query last write time (silently ignoring this rare
+                // error).
+                ctx.paths_formatted_at[fo->path] = fs_last_write_time_noexcept(fo->path).value_or(
+                    fs::file_time_type::clock::now());
+                nowide::cout << "Formatted " << fo->path << "\n";
+                ctx.paths_to_format_since.erase(fo->path);
+            } else {
+                nowide::cout << "ERROR formatting " << fo->path << "\n";
+            }
+        } else if (auto* to = std::any_cast<msg::TouchOne>(&msg)) {
+            std::error_code ec;
+            const auto now = fs::file_time_type::clock::now();
+            fs::last_write_time(to->path, now, ec);
+            if (!ec) {
+                // Assume touch is for formatted files.
+                auto it = ctx.paths_formatted_at.find(to->path);
+                if (it != ctx.paths_formatted_at.end()) {
+                    it->second = fs_last_write_time_noexcept(to->path).value_or(now);
+                } else {
+                    assert(false);
+                }
+            }
         } else {
-            paths_formatted_at.erase(path);
-            nowide::cout << "ERROR formatting " << path << "\n";
+            fprintf(stderr, "Invalid message\n");
+            assert(false);
         }
     }
 }
@@ -152,7 +211,7 @@ int main_core(int argc, char* argv[]) {
     FLAGS_logtostderr = 1;
     google::InitGoogleLogging(argv[0]);
 
-    Context ctx;
+    State ctx;
     auto& os = ctx.options;
 
     for (int i = 1; i < argc; ++i) {
@@ -165,7 +224,14 @@ int main_core(int argc, char* argv[]) {
                 return EXIT_FAILURE;
             }
         } else {
-            os.paths.push_back(std::string(ai));
+            std::error_code ec;
+            auto abs_path = fs::absolute(PathFromUtf8(ai), ec);
+            if (ec) {
+                std::cerr << "Can't convert path to absolute: " << argv[i] << "\n";
+                return EXIT_FAILURE;
+            }
+            fmt::print("{} -> abs -> {}\n", ai, abs_path.string());
+            os.paths.push_back(abs_path.string());
         }
     }
 
@@ -174,27 +240,37 @@ int main_core(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    if (nowide::system("clang-format --version") != EXIT_SUCCESS) {
+    system("echo $PATH");
+    if (system("clang-format --version") != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
 
     int n_invalid_paths = 0;
     for (auto& p : os.paths) {
-        auto fs_path = fs::path(reinterpret_u8(p));
-        if (!fs::exists(fs_path)) {
+        if (!fs_exists_noexcept(p)) {
             ++n_invalid_paths;
-            nowide::cerr << "ERROR: Path " << p << " doesn't exist.\n";
-        } else if (!fs::is_directory(fs_path)) {
+            nowide::cerr << "ERROR: Path " << ToUtf8(p) << " doesn't exist.\n";
+        } else if (!fs_is_directory_noexcept(p)) {
             ++n_invalid_paths;
-            nowide::cerr << "ERROR: Path " << p << " is not a directory.\n";
+            nowide::cerr << "ERROR: Path " << ToUtf8(p) << " is not a directory.\n";
         }
     }
     if (n_invalid_paths > 0) {
         return EXIT_FAILURE;
     }
 
+    auto ui = make_ui_glfw_imgui(ctx, ctx.to_app_queue);
+    if (!ui) {
+        return EXIT_FAILURE;
+    }
+
+    std::vector<std::string> paths;
+    paths.reserve(paths.size());
+    for (auto& p : os.paths) {
+        paths.push_back(ToUtf8(p));
+    }
     auto* monitor = fsw::monitor_factory::create_monitor(
-        fsw_monitor_type::system_default_monitor_type, os.paths, fsw_event_callback, &ctx);
+        fsw_monitor_type::system_default_monitor_type, paths, fsw_event_callback, &ctx);
 
     if (!monitor) {
         std::cerr << "ERROR: couldn't create system default filesystem monitor\n";
@@ -211,7 +287,9 @@ int main_core(int argc, char* argv[]) {
     });
 
     fmt::print("claford is running, CTRL-C to exit...\n");
-    FormattingLoop(ctx);
+    ui->exec([&ctx]() {
+        ProcessMsgs(ctx);
+    });
     monitor->stop();
 
     if (monitor_thread.joinable()) {

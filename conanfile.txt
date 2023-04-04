@@ -1,8 +1,10 @@
 [requires]
+concurrentqueue/1.0.3
 fmt/9.1.0
-glog/0.6.0
+freetype/2.13.0
+glew/2.2.0
 glfw/3.3.8
-imgui/1.89.2
+glog/0.6.0
 
 [generators]
 CMakeDeps

@@ -1,6 +1,12 @@
 # CLAFORD - clang-format-daemon
 
+The program starts watching the specified directory and applies `clang-format -i -style=file ...` if a file gets modified.
+
+![image](https://user-images.githubusercontent.com/4126943/229810574-c6241367-87c8-4ad2-b92e-f198e0b97940.png)
+
 ## Build
+
+You need to have `conan 1.5*` and `cmake` installed.
 
 Run these scripts:
 ```
@@ -14,7 +20,3 @@ Run these scripts:
 ```
 ./i/bin/claford <dir-to-watch>
 ```
-
-The program starts watching the specified directory and applies `clang-format -i -style=file ...` if a file gets modified.
-
-When you save a file in your text editor, which then gets formatted immediately by claford, the text editor might fail to detect that the file has been changed. With Xcode it happens all the time. That's why there's a 1 second delay before each clang-format call.
