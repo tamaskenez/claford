@@ -1,3 +1,4 @@
+#include "clang_format.h"
 #include "state.h"
 #include "ui_glfw_imgui.h"
 #include "util.h"
@@ -6,7 +7,6 @@
 #include <glog/logging.h>
 #include <libfswatch/c++/monitor_factory.hpp>
 #include <nowide/args.hpp>
-#include <nowide/cstdlib.hpp>
 #include <nowide/iostream.hpp>
 
 #include <atomic>
@@ -108,9 +108,7 @@ void FileChanged(const fs::path& path, State& ctx) {
             return;
         }
     }
-    int result =
-        nowide::system(fmt::format("clang-format --dry-run -Werror \"{}\"", ToUtf8(path)).c_str());
-    if (result == EXIT_SUCCESS) {
+    if (clang_format::IsFileFormatted(path)) {
         // Already formatted.
         ctx.paths_formatted_at[path] = *last_write_time;
         ctx.paths_to_format_since.erase(path);
@@ -157,9 +155,7 @@ void ProcessMsgs(State& ctx) {
             std::vector<fs::path> formatted_paths;
             for (auto it = ctx.paths_to_format_since.begin(); it != ctx.paths_to_format_since.end();
                  /* no inc */) {
-                int result = nowide::system(
-                    fmt::format("clang-format -i \"{}\"", ToUtf8(it->first)).c_str());
-                if (result == EXIT_SUCCESS) {
+                if (clang_format::FormatFileInPlace(it->first)) {
                     // Use "now" if failed to query last write time (silently ignoring this rare
                     // error).
                     ctx.paths_formatted_at[it->first] =
@@ -173,9 +169,7 @@ void ProcessMsgs(State& ctx) {
                 }
             }
         } else if (auto* fo = std::any_cast<msg::FormatOne>(&msg)) {
-            int result =
-                nowide::system(fmt::format("clang-format -i \"{}\"", ToUtf8(fo->path)).c_str());
-            if (result == EXIT_SUCCESS) {
+            if (clang_format::FormatFileInPlace(fo->path)) {
                 // Use "now" if failed to query last write time (silently ignoring this rare
                 // error).
                 ctx.paths_formatted_at[fo->path] = fs_last_write_time_noexcept(fo->path).value_or(
