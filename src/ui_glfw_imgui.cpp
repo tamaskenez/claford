@@ -165,10 +165,11 @@ struct UI_GLFW_ImGui : public UI {
         dark_mode ? ImGui::StyleColorsDark() : ImGui::StyleColorsLight();
     }
 
-    void exec(std::function<void()> process_msgs_fn) override {
+    void exec(std::function<ProcessMsgsResult()> process_msgs_fn) override {
         ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
         ApplyDarkMode();
-        while (!glfwWindowShouldClose(window)) {
+        bool shouldExit = false;
+        while (!glfwWindowShouldClose(window) && !shouldExit) {
             // Poll and handle events (inputs, window resize, etc.)
             // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear
             // imgui wants to use your inputs.
@@ -336,9 +337,19 @@ struct UI_GLFW_ImGui : public UI {
             glClear(GL_COLOR_BUFFER_BIT);
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-            process_msgs_fn();
+            auto sleep_time = chr::milliseconds(window_has_focus ? 1000 / 30 : 1000 / 10);
+            switch (process_msgs_fn()) {
+                case ProcessMsgsResult::QueueWasEmpty:
+                    break;
+                case ProcessMsgsResult::QueueWasNotEmpty:
+                    sleep_time = chr::milliseconds(0);
+                    break;
+                case ProcessMsgsResult::ShouldExit:
+                    shouldExit = true;
+                    break;
+            }
             glfwSwapBuffers(window);
-            std::this_thread::sleep_for(chr::milliseconds(window_has_focus ? 1 / 60 : 1 / 20));
+            std::this_thread::sleep_for(sleep_time);
 
             if (new_dark_mode != dark_mode) {
                 dark_mode = new_dark_mode;

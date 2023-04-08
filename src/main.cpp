@@ -119,14 +119,14 @@ void FileChanged(const fs::path& path, State& ctx) {
     }
 }
 
-void ProcessMsgs(State& ctx) {
+ProcessMsgsResult ProcessMsgs(State& ctx) {
     std::any msg;
     for (;;) {
         if (g_sigint_received) {
-            exit(EXIT_SUCCESS);
+            return ProcessMsgsResult::ShouldExit;
         }
         if (!ctx.to_app_queue.try_dequeue(msg)) {
-            return;
+            return ProcessMsgsResult::QueueWasEmpty;
         }
         if (auto* c = std::any_cast<msg::FileChanged>(&msg)) {
             FileChanged(c->path, ctx);
@@ -196,6 +196,7 @@ void ProcessMsgs(State& ctx) {
             fprintf(stderr, "Invalid message\n");
             assert(false);
         }
+        return ProcessMsgsResult::QueueWasNotEmpty;
     }
 }
 
@@ -282,7 +283,7 @@ int main_core(int argc, char* argv[]) {
 
     fmt::print("claford is running, CTRL-C to exit...\n");
     ui->exec([&ctx]() {
-        ProcessMsgs(ctx);
+        return ProcessMsgs(ctx);
     });
     monitor->stop();
 
