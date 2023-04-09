@@ -235,8 +235,9 @@ int main_core(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    system("echo $PATH");
-    if (system("clang-format --version") != EXIT_SUCCESS) {
+    auto clang_format = ClangFormat::make();
+    if (!clang_format) {
+        fmt::print(stderr, "Error: {}\n", clang_format.error());
         return EXIT_FAILURE;
     }
 

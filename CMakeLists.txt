@@ -4,6 +4,7 @@ project(claford)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_REQUIRED 1)
 
+find_package(Boost REQUIRED)
 find_package(concurrentqueue REQUIRED)
 find_package(fmt REQUIRED)
 find_package(freetype CONFIG REQUIRED)
@@ -13,6 +14,7 @@ find_package(glog REQUIRED)
 find_package(imgui REQUIRED)
 find_package(libfswatch REQUIRED)
 find_package(nowide REQUIRED)
+find_package(tl-expected REQUIRED)
 
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 

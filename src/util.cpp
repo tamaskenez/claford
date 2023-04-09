@@ -41,3 +41,13 @@ std::optional<std::filesystem::file_time_type> fs_last_write_time_noexcept(
     }
     return r;
 }
+
+std::string_view trim(std::string_view s) {
+    while (!s.empty() && isspace(s[0])) {
+        s.remove_prefix(1);
+    }
+    while (!s.empty() && isspace(s.back())) {
+        s.remove_suffix(1);
+    }
+    return s;
+}

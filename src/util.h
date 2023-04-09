@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #define BE(X) (X).begin(), (X).end()
 
@@ -12,3 +13,4 @@ bool fs_exists_noexcept(const std::filesystem::path& path);
 bool fs_is_directory_noexcept(const std::filesystem::path& path);
 std::optional<std::filesystem::file_time_type> fs_last_write_time_noexcept(
     const std::filesystem::path& path);
+std::string_view trim(std::string_view s);

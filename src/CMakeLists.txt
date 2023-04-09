@@ -23,6 +23,9 @@ target_link_libraries(claford PRIVATE
     imgui_glfw_binding
     libfswatch::libfswatch
     nowide::nowide
+    Boost::headers
+    Boost::filesystem
+    tl::expected
 )
 
 install(TARGETS claford

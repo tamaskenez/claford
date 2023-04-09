@@ -1,10 +1,18 @@
 [requires]
+boost/1.81.0
 concurrentqueue/1.0.3
 fmt/9.1.0
 freetype/2.13.0
 glew/2.2.0
 glfw/3.3.8
 glog/0.6.0
+tl-expected/20190710
 
 [generators]
 CMakeDeps
+
+[options]
+#boost:system_no_deprecated=True
+#boost:asio_no_deprecated=True
+#boost:filesystem_no_deprecated=True
+#boost:filesystem_use_std_fs=True

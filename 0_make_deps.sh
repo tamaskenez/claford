@@ -1,7 +1,7 @@
 #!/bin/bash -e
 
-conan install . -b missing -if i/cmake -of of -pr:b=default -s build_type=Debug
-conan install . -b missing -if i/cmake -of of -pr:b=default -s build_type=Release
+conan install . -b missing -if i/cmake -of of -pr:b=default -s compiler.cppstd=20 -s build_type=Debug
+conan install . -b missing -if i/cmake -of of -pr:b=default -s compiler.cppstd=20 -s build_type=Release
 
 rm -rf deps
 mkdir deps
