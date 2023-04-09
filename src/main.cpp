@@ -108,7 +108,7 @@ void FileChanged(const fs::path& path, State& ctx) {
             return;
         }
     }
-    if (clang_format::IsFileFormatted(path)) {
+    if (ctx.clang_format->is_file_formatted(path)) {
         // Already formatted.
         ctx.paths_formatted_at[path] = *last_write_time;
         ctx.paths_to_format_since.erase(path);
@@ -155,7 +155,7 @@ ProcessMsgsResult ProcessMsgs(State& ctx) {
             std::vector<fs::path> formatted_paths;
             for (auto it = ctx.paths_to_format_since.begin(); it != ctx.paths_to_format_since.end();
                  /* no inc */) {
-                if (clang_format::FormatFileInPlace(it->first)) {
+                if (ctx.clang_format->format_file_in_place(it->first)) {
                     // Use "now" if failed to query last write time (silently ignoring this rare
                     // error).
                     ctx.paths_formatted_at[it->first] =
@@ -169,7 +169,7 @@ ProcessMsgsResult ProcessMsgs(State& ctx) {
                 }
             }
         } else if (auto* fo = std::any_cast<msg::FormatOne>(&msg)) {
-            if (clang_format::FormatFileInPlace(fo->path)) {
+            if (ctx.clang_format->format_file_in_place(fo->path)) {
                 // Use "now" if failed to query last write time (silently ignoring this rare
                 // error).
                 ctx.paths_formatted_at[fo->path] = fs_last_write_time_noexcept(fo->path).value_or(
@@ -240,6 +240,7 @@ int main_core(int argc, char* argv[]) {
         fmt::print(stderr, "Error: {}\n", clang_format.error());
         return EXIT_FAILURE;
     }
+    ctx.clang_format = std::move(*clang_format);
 
     int n_invalid_paths = 0;
     for (auto& p : os.paths) {

@@ -13,13 +13,23 @@ namespace bp = boost::process;
 namespace fs = std::filesystem;
 
 struct ClangFormatImpl : public ClangFormat {
-    bp::filesystem::path _path;
+    bp::filesystem::path path;
 
     explicit ClangFormatImpl(bp::filesystem::path path)
-        : _path(path) {}
+        : path(path) {}
 
-    virtual std::filesystem::path path() override {
-        return std::filesystem::path(_path.native());
+    bool is_file_formatted(const fs::path& f) override {
+        return bp::system(path,
+                          "--dry-run",
+                          "-Werror",
+                          f.string(),
+                          bp::std_out > bp::null,
+                          bp::std_err > bp::null)
+            == EXIT_SUCCESS;
+    }
+    bool format_file_in_place(const std::filesystem::path& f) override {
+        return bp::system(path, "-i", f.string(), bp::std_out > bp::null, bp::std_err > bp::null)
+            == EXIT_SUCCESS;
     }
 };
 
@@ -65,24 +75,3 @@ tl::expected<std::unique_ptr<ClangFormat>, std::string> ClangFormat::make() {
     fmt::print("`clang-format --version: {}\n", lines[0]);
     return std::make_unique<ClangFormatImpl>(clang_format_path);
 }
-
-namespace clang_format {
-
-bool IsFileFormatted(const std::filesystem::path& p) {
-    /*
-    return bp::system(
-                                      s_clang_format_path,
-                                      "--dry-run","-Werror",
-                                      p,
-                                      bp::std_out > bp::null
-                                      bp::std_err > bp::null
-    ) == EXIT_SUCCESS;
-    */
-    (void)p;
-    return false;
-}
-
-bool FormatFileInPlace(const std::filesystem::path& p) {
-    return nowide::system(fmt::format("clang-format -i \"{}\"", ToUtf8(p)).c_str()) == EXIT_SUCCESS;
-}
-}  // namespace clang_format

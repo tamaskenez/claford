@@ -1,5 +1,7 @@
 #pragma once
 
+#include "clang_format.h"
+
 #include <moodycamel/concurrentqueue.h>
 
 #include <any>
@@ -29,6 +31,7 @@ struct State {
     std::unordered_map<std::filesystem::path, std::filesystem::file_time_type>
         paths_to_format_since;
     ToAppQueue to_app_queue;
+    std::unique_ptr<ClangFormat> clang_format;
 };
 
 namespace msg {
