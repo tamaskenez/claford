@@ -3,6 +3,7 @@
 #include "clang_format.h"
 
 #include <moodycamel/concurrentqueue.h>
+#include <readerwriterqueue/readerwriterqueue.h>
 
 #include <any>
 #include <filesystem>
@@ -11,7 +12,18 @@
 #include <unordered_map>
 #include <vector>
 
+struct ACFMsg {
+	enum class Command {
+		Exit,CheckFormat,Format
+	};
+	
+	Command command;
+	std::filesystem::path path;
+	std::function<void(std::filesystem::path,bool)> completion;
+};
+
 using ToAppQueue = moodycamel::ConcurrentQueue<std::any>;
+using ToAsyncClangFormatQueue = moodycamel::BlockingReaderWriterQueue<ACFMsg>;
 
 template<>
 struct std::hash<std::filesystem::path> {
@@ -31,7 +43,8 @@ struct State {
     std::unordered_map<std::filesystem::path, std::filesystem::file_time_type>
         paths_to_format_since;
     ToAppQueue to_app_queue;
-    std::unique_ptr<ClangFormat> clang_format;
+	ToAsyncClangFormatQueue to_async_clang_format_queue;
+	std::thread async_clang_format;
 };
 
 namespace msg {
@@ -47,4 +60,6 @@ struct FormatOne {
 struct TouchOne {
     std::filesystem::path path;
 };
+struct AsyncClangFormatResult
+{std::function<void()>completion;};
 }  // namespace msg

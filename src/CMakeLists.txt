@@ -16,6 +16,8 @@ target_include_directories(claford PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${sources})
 
 target_link_libraries(claford PRIVATE
+    Boost::filesystem
+    Boost::headers
     concurrentqueue::concurrentqueue
     fmt::fmt
     glfw
@@ -23,8 +25,7 @@ target_link_libraries(claford PRIVATE
     imgui_glfw_binding
     libfswatch::libfswatch
     nowide::nowide
-    Boost::headers
-    Boost::filesystem
+    readerwriterqueue::readerwriterqueue
     tl::expected
 )
 

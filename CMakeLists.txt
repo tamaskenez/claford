@@ -15,6 +15,7 @@ find_package(imgui REQUIRED)
 find_package(libfswatch REQUIRED)
 find_package(nowide REQUIRED)
 find_package(tl-expected REQUIRED)
+find_package(readerwriterqueue REQUIRED)
 
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
