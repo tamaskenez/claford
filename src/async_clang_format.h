@@ -4,5 +4,6 @@
 #include "state.h"
 
 void AsyncClangFormat(std::unique_ptr<ClangFormat> clang_format,
-					  ToAsyncClangFormatQueue* input_queue,
-	   ToAppQueue* app_queue);
+                      ToAsyncClangFormatQueue* input_queue,
+                      ToAppQueue* app_queue,
+                      std::atomic<bool>* exit_flag);

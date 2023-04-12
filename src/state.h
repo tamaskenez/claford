@@ -13,13 +13,11 @@
 #include <vector>
 
 struct ACFMsg {
-	enum class Command {
-		Exit,CheckFormat,Format
-	};
-	
-	Command command;
-	std::filesystem::path path;
-	std::function<void(std::filesystem::path,bool)> completion;
+    enum class Command { CheckFormat, Format };
+
+    Command command;
+    std::filesystem::path path;
+    std::function<void(std::filesystem::path, bool)> completion;
 };
 
 using ToAppQueue = moodycamel::ConcurrentQueue<std::any>;
@@ -43,8 +41,9 @@ struct State {
     std::unordered_map<std::filesystem::path, std::filesystem::file_time_type>
         paths_to_format_since;
     ToAppQueue to_app_queue;
-	ToAsyncClangFormatQueue to_async_clang_format_queue;
-	std::thread async_clang_format;
+    ToAsyncClangFormatQueue to_async_clang_format_queue;
+    std::thread async_clang_format;
+    std::atomic<bool> exit_flag;
 };
 
 namespace msg {
@@ -60,6 +59,7 @@ struct FormatOne {
 struct TouchOne {
     std::filesystem::path path;
 };
-struct AsyncClangFormatResult
-{std::function<void()>completion;};
+struct AsyncClangFormatResult {
+    std::function<void()> completion;
+};
 }  // namespace msg

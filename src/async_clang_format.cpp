@@ -1,15 +1,25 @@
 #include "async_clang_format.h"
+
 #include "state.h"
+#include "util.h"
+
+#include <fmt/format.h>
 
 void AsyncClangFormat(std::unique_ptr<ClangFormat> clang_format,
                       ToAsyncClangFormatQueue* input_queue,
-                      ToAppQueue* app_queue) {
+                      ToAppQueue* app_queue,
+                      std::atomic<bool>* exit_flag) {
     ACFMsg msg;
     for (;;) {
-        input_queue->wait_dequeue(msg);
+        constexpr int64_t k_one_second_in_usec = 1000000;
+        bool got_msg = input_queue->wait_dequeue_timed(msg, k_one_second_in_usec);
+        if (*exit_flag) {
+            break;
+        }
+        if (!got_msg) {
+            continue;
+        }
         switch (msg.command) {
-            case ACFMsg::Command::Exit:
-                return;
             case ACFMsg::Command::CheckFormat: {
                 bool result = clang_format->is_file_formatted(msg.path);
                 app_queue->enqueue(msg::AsyncClangFormatResult{

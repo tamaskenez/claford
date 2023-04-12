@@ -1,8 +1,8 @@
+#include "async_clang_format.h"
 #include "clang_format.h"
 #include "state.h"
 #include "ui_glfw_imgui.h"
 #include "util.h"
-#include "async_clang_format.h"
 
 #include <fmt/format.h>
 #include <glog/logging.h>
@@ -109,21 +109,20 @@ void FileChanged(const fs::path& path, State& ctx) {
             return;
         }
     }
-	ctx.to_async_clang_format_queue.enqueue(ACFMsg{
-		.command = ACFMsg::Command::CheckFormat,
-		.path = std::move(path),
-		[&ctx,last_write_time](fs::path path, bool result){
-			if (result) {
-				// Already formatted.
-				ctx.paths_formatted_at[path] = *last_write_time;
-				ctx.paths_to_format_since.erase(path);
-			} else {
-				// Needs formatting.
-				ctx.paths_formatted_at.erase(path);
-				ctx.paths_to_format_since[path] = *last_write_time;
-			}
-		}
-	});
+    ctx.to_async_clang_format_queue.enqueue(
+        ACFMsg{.command = ACFMsg::Command::CheckFormat,
+               .path = std::move(path),
+               [&ctx, last_write_time](fs::path path, bool result) {
+                   if (result) {
+                       // Already formatted.
+                       ctx.paths_formatted_at[path] = *last_write_time;
+                       ctx.paths_to_format_since.erase(path);
+                   } else {
+                       // Needs formatting.
+                       ctx.paths_formatted_at.erase(path);
+                       ctx.paths_to_format_since[path] = *last_write_time;
+                   }
+               }});
 }
 
 ProcessMsgsResult ProcessMsgs(State& ctx) {
@@ -160,42 +159,40 @@ ProcessMsgsResult ProcessMsgs(State& ctx) {
             }
         } else if (std::any_cast<msg::FormatAll>(&msg)) {
             std::vector<fs::path> formatted_paths;
-            for (auto&[path0,_]: ctx.paths_to_format_since) {
-				ctx.to_async_clang_format_queue.enqueue(ACFMsg{
-					.command=ACFMsg::Command::Format,
-					.path=path0,
-					.completion=[&ctx](fs::path path,bool result){
-						if (result) {
-							// Use "now" if failed to query last write time (silently ignoring this rare
-							// error).
-							ctx.paths_formatted_at[path] =
-								fs_last_write_time_noexcept(path).value_or(
-									fs::file_time_type::clock::now());
-							nowide::cout << "Formatted " << path << "\n";
-							ctx.paths_to_format_since.erase(path);
-						} else {
-							nowide::cout << "ERROR formatting " << path << "\n";
-						}
-					}
-				});
+            for (auto& [path0, _] : ctx.paths_to_format_since) {
+                ctx.to_async_clang_format_queue.enqueue(
+                    ACFMsg{.command = ACFMsg::Command::Format,
+                           .path = path0,
+                           .completion = [&ctx](fs::path path, bool result) {
+                               if (result) {
+                                   // Use "now" if failed to query last write time (silently
+                                   // ignoring this rare error).
+                                   ctx.paths_formatted_at[path] =
+                                       fs_last_write_time_noexcept(path).value_or(
+                                           fs::file_time_type::clock::now());
+                                   nowide::cout << "Formatted " << path << "\n";
+                                   ctx.paths_to_format_since.erase(path);
+                               } else {
+                                   nowide::cout << "ERROR formatting " << path << "\n";
+                               }
+                           }});
             }
         } else if (auto* fo = std::any_cast<msg::FormatOne>(&msg)) {
-			ctx.to_async_clang_format_queue.enqueue(ACFMsg{
-				.command=ACFMsg::Command::Format,
-				.path=fo->path,
-				.completion=[&ctx](fs::path path,bool result){
-					if (result) {
-						// Use "now" if failed to query last write time (silently ignoring this rare
-						// error).
-						ctx.paths_formatted_at[path] = fs_last_write_time_noexcept(path).value_or(
-							fs::file_time_type::clock::now());
-						nowide::cout << "Formatted " << path << "\n";
-						ctx.paths_to_format_since.erase(path);
-					} else {
-						nowide::cout << "ERROR formatting " << path << "\n";
-					}
-				}
-			});
+            ctx.to_async_clang_format_queue.enqueue(ACFMsg{
+                .command = ACFMsg::Command::Format,
+                .path = fo->path,
+                .completion = [&ctx](fs::path path, bool result) {
+                    if (result) {
+                        // Use "now" if failed to query last write time (silently ignoring this rare
+                        // error).
+                        ctx.paths_formatted_at[path] = fs_last_write_time_noexcept(path).value_or(
+                            fs::file_time_type::clock::now());
+                        nowide::cout << "Formatted " << path << "\n";
+                        ctx.paths_to_format_since.erase(path);
+                    } else {
+                        nowide::cout << "ERROR formatting " << path << "\n";
+                    }
+                }});
         } else if (auto* to = std::any_cast<msg::TouchOne>(&msg)) {
             std::error_code ec;
             const auto now = fs::file_time_type::clock::now();
@@ -209,6 +206,8 @@ ProcessMsgsResult ProcessMsgs(State& ctx) {
                     assert(false);
                 }
             }
+        } else if (auto* acfr = std::any_cast<msg::AsyncClangFormatResult>(&msg)) {
+            acfr->completion();
         } else {
             fprintf(stderr, "Invalid message\n");
             assert(false);
@@ -254,10 +253,13 @@ int main_core(int argc, char* argv[]) {
 
     auto clang_format = ClangFormat::make();
     if (!clang_format) {
-        fmt::print(stderr, "Error: {}\n", clang_format.error());
         return EXIT_FAILURE;
     }
-	ctx.async_clang_format = std::thread(AsyncClangFormat, std::move(*clang_format), &ctx.to_async_clang_format_queue,&ctx.to_app_queue);
+    ctx.async_clang_format = std::thread(AsyncClangFormat,
+                                         std::move(*clang_format),
+                                         &ctx.to_async_clang_format_queue,
+                                         &ctx.to_app_queue,
+                                         &ctx.exit_flag);
 
     int n_invalid_paths = 0;
     for (auto& p : os.paths) {
@@ -304,11 +306,13 @@ int main_core(int argc, char* argv[]) {
     ui->exec([&ctx]() {
         return ProcessMsgs(ctx);
     });
-	ctx.to_async_clang_format_queue.enqueue(ACFMsg{.command=ACFMsg::Command::Exit});
-	if(	ctx.async_clang_format.joinable()){
-		ctx.async_clang_format.join();
-	}
+
+    ctx.exit_flag = true;
     monitor->stop();
+
+    if (ctx.async_clang_format.joinable()) {
+        ctx.async_clang_format.join();
+    }
 
     if (monitor_thread.joinable()) {
         monitor_thread.join();
