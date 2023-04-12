@@ -20,3 +20,5 @@ Run these scripts:
 ```
 ./i/bin/claford <dir-to-watch>
 ```
+
+Then click `Add All` to add all the files in the directory. Otherwise they will be added automaticallly when they change.
