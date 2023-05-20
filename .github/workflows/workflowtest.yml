@@ -15,11 +15,13 @@ jobs:
   test-windows:
     runs-on: windows-latest
     steps:
-    - name: conan test
+    - name: conan install
       run: |
         py -m pip install 'conan==1.60.0'
-        py -c 'import os,sysconfig;print(sysconfig.get_path("scripts",f"{os.name}_user"))'
+        py -c 'import os,sysconfig;print(sysconfig.get_path(`"scripts`",f`"{os.name}_user`"))'
         choco install -y conan --version=1.60.0
+    - name: conan test
+      run: conan --version
 
   test-linux:
     runs-on: ubuntu-latest
