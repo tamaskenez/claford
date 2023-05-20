@@ -1,0 +1,23 @@
+name: workflow-test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-mac:
+    runs-on: macos-latest
+    steps:
+    - name: cmake test
+      run: cmake --version
+
+  test-windows:
+    runs-on: windows-latest
+    steps:
+    - name: cmake test
+      run: cmake --version
+
+  test-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - name: cmake test
+      run: cmake --version
