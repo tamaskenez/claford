@@ -7,28 +7,32 @@ jobs:
   test-mac:
     runs-on: macos-latest
     steps:
-    - name: conan test
-      run: |
-        python3 -m pip install 'conan==1.60.0'
-        conan --version
+    - name: Install Conan
+      id: conan
+      uses: turtlebrowser/get-conan@main
+      with:
+        version: 1.60.0
+    - name: conan version
+      run: conan --version
 
   test-windows:
     runs-on: windows-latest
     steps:
-    - name: conan install
-      run: |
-        py -m pip install 'conan==1.60.0'
-        py -c 'import os,sysconfig;print(sysconfig.get_path(""scripts"",f""{os.name}_user""))'
-        choco install -y conan --version=1.60.0
-    - name: conan test
-      run: |
-        $env:path = $env:path + ";" + [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-        conan --version
+    - name: Install Conan
+      id: conan
+      uses: turtlebrowser/get-conan@main
+      with:
+        version: 1.60.0
+    - name: conan version
+      run: conan --version
 
   test-linux:
     runs-on: ubuntu-latest
     steps:
-    - name: conan test
-      run: |
-        python -m pip install 'conan==1.60.0'
-        conan --version
+    - name: Install Conan
+      id: conan
+      uses: turtlebrowser/get-conan@main
+      with:
+        version: 1.60.0
+    - name: conan version
+      run: conan --version
