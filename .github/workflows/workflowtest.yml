@@ -8,16 +8,23 @@ jobs:
     runs-on: macos-latest
     steps:
     - name: conan test
-      run: python -m pip install 'conan==1.60.0'
+      run: |
+        python3 -m pip install 'conan==1.60.0'
+        conan --version
 
   test-windows:
     runs-on: windows-latest
     steps:
     - name: conan test
-      run: py -m pip install 'conan==1.60.0'
+      run: |
+        py -m pip install 'conan==1.60.0'
+        py -c 'import os,sysconfig;print(sysconfig.get_path("scripts",f"{os.name}_user"))'
+        choco install -y conan --version=1.60.0
 
   test-linux:
     runs-on: ubuntu-latest
     steps:
     - name: conan test
-      run: python -m pip install 'conan==1.60.0'
+      run: |
+        python -m pip install 'conan==1.60.0'
+        conan --version
