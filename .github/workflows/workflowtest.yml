@@ -7,17 +7,17 @@ jobs:
   test-mac:
     runs-on: macos-latest
     steps:
-    - name: cmake test
-      run: cmake --version
+    - name: conan test
+      run: conan --version
 
   test-windows:
     runs-on: windows-latest
     steps:
-    - name: cmake test
-      run: cmake --version
+    - name: conan test
+      run: conan --version
 
   test-linux:
     runs-on: ubuntu-latest
     steps:
-    - name: cmake test
-      run: cmake --version
+    - name: conan test
+      run: conan --version
